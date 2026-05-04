@@ -73,7 +73,7 @@ setInterval(async () => {
     formData.append("file", blob, "frame.jpg");
 
     try {
-      let res = await fetch("http://127.0.0.1:8000/predict", {
+      let res = await fetch("https://sign-language-detection-4e57.onrender.com/predict", {
         method: "POST",
         body: formData
       });
