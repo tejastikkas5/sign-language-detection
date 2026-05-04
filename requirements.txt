@@ -7,3 +7,4 @@ pillow
 numpy
 python-multipart
 rich
+requests
