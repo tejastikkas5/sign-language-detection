@@ -12,7 +12,6 @@ from src.model import DETR
 
 app = FastAPI()
 
-# ✅ CORS (allow frontend access)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,46 +20,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Labels (must match training config)
 labels = ["hello", "iloveyou", "thankyou"]
 
-# ✅ Model path
 MODEL_PATH = "pretrained/4426_model.pt"
 
+model = None  # 👈 initially empty
 
-# 🚀 Download model if not exists
-def download_model():
+
+# 🚀 Load model AFTER server starts
+@app.on_event("startup")
+def load_model():
+    global model
+    print("🚀 Starting app...")
+
+    os.makedirs("pretrained", exist_ok=True)
+
     if not os.path.exists(MODEL_PATH):
-        print("⬇️ Downloading model from Hugging Face...")
-        os.makedirs("pretrained", exist_ok=True)
-
+        print("📥 Downloading model...")
         url = "https://huggingface.co/tejas55/sign-language-model/resolve/main/4426_model.pt"
+        r = requests.get(url)
+        with open(MODEL_PATH, "wb") as f:
+            f.write(r.content)
 
-        try:
-            r = requests.get(url, stream=True)
-            r.raise_for_status()
+    print("📦 Loading model...")
+    model = DETR(num_classes=3)
+    state_dict = torch.load(MODEL_PATH, map_location="cpu")
+    model.load_state_dict(state_dict)
+    model.eval()
 
-            with open(MODEL_PATH, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-
-            print("✅ Model downloaded successfully")
-
-        except Exception as e:
-            print("❌ Model download failed:", e)
-            raise RuntimeError("Failed to download model")
-
-
-# 🚀 Load model once at startup
-download_model()
-
-model = DETR(num_classes=3)
-
-state_dict = torch.load(MODEL_PATH, map_location="cpu")
-model.load_state_dict(state_dict)
-
-model.eval()
+    print("✅ Model ready!")
 
 
 @app.get("/")
@@ -73,28 +61,22 @@ async def predict(file: UploadFile = File(...)):
     try:
         contents = await file.read()
 
-        # Convert image
         image = Image.open(io.BytesIO(contents)).convert("RGB")
         img = np.array(image)
 
-        # Preprocess
         img = cv2.resize(img, (224, 224))
         img = img / 255.0
         img = np.transpose(img, (2, 0, 1))
 
         tensor = torch.tensor(img, dtype=torch.float32).unsqueeze(0)
 
-        # Inference
         with torch.no_grad():
             outputs = model(tensor)
 
-        # DETR output
-        logits = outputs["pred_logits"][0]  # [queries, classes+1]
+        logits = outputs["pred_logits"][0]
         probs = torch.softmax(logits, dim=-1)
 
-        # Ignore background class (last index)
         scores, classes = torch.max(probs[:, :-1], dim=-1)
-
         best_idx = torch.argmax(scores)
 
         pred_class = classes[best_idx].item()
