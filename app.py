@@ -1,5 +1,9 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
 import torch
 import numpy as np
 import cv2
@@ -11,6 +15,11 @@ import requests
 from src.model import DETR
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/")
+def serve_frontend():
+    return FileResponse("static/realtime.html")
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,9 +60,6 @@ def load_model():
     print("✅ Model ready!")
 
 
-@app.get("/")
-def home():
-    return {"message": "Sign Language API Running 🚀"}
 
 
 @app.post("/predict")
