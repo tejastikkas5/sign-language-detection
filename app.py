@@ -5,34 +5,68 @@ import numpy as np
 import cv2
 from PIL import Image
 import io
+import os
+import requests
 
 from src.model import DETR
 
 app = FastAPI()
 
+# ✅ CORS (allow frontend access)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow all (for development)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Correct label order (from your config)
+# ✅ Labels (must match training config)
 labels = ["hello", "iloveyou", "thankyou"]
 
-# DETR internally adds background → so num_classes = 3
+# ✅ Model path
+MODEL_PATH = "pretrained/4426_model.pt"
+
+
+# 🚀 Download model if not exists
+def download_model():
+    if not os.path.exists(MODEL_PATH):
+        print("⬇️ Downloading model from Hugging Face...")
+        os.makedirs("pretrained", exist_ok=True)
+
+        url = "https://huggingface.co/tejas55/sign-language-model/resolve/main/4426_model.pt"
+
+        try:
+            r = requests.get(url, stream=True)
+            r.raise_for_status()
+
+            with open(MODEL_PATH, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+
+            print("✅ Model downloaded successfully")
+
+        except Exception as e:
+            print("❌ Model download failed:", e)
+            raise RuntimeError("Failed to download model")
+
+
+# 🚀 Load model once at startup
+download_model()
+
 model = DETR(num_classes=3)
 
-# Load pretrained weights
-state_dict = torch.load("pretrained/4426_model.pt", map_location="cpu")
+state_dict = torch.load(MODEL_PATH, map_location="cpu")
 model.load_state_dict(state_dict)
 
 model.eval()
 
+
 @app.get("/")
 def home():
     return {"message": "Sign Language API Running 🚀"}
+
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
@@ -50,19 +84,17 @@ async def predict(file: UploadFile = File(...)):
 
         tensor = torch.tensor(img, dtype=torch.float32).unsqueeze(0)
 
+        # Inference
         with torch.no_grad():
             outputs = model(tensor)
 
-        # 🔥 DETR correct handling
-        logits = outputs["pred_logits"]   # [1, queries, classes+1]
-        logits = logits[0]                # [queries, classes+1]
-
+        # DETR output
+        logits = outputs["pred_logits"][0]  # [queries, classes+1]
         probs = torch.softmax(logits, dim=-1)
 
-        # Ignore background (last class)
+        # Ignore background class (last index)
         scores, classes = torch.max(probs[:, :-1], dim=-1)
 
-        # Best detection
         best_idx = torch.argmax(scores)
 
         pred_class = classes[best_idx].item()
