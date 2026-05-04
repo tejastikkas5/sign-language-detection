@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Live Sign Detection</title>
+  <style>
+  body {
+    text-align: center;
+    font-family: Arial;
+    background: #111;
+    color: white;
+  }
+
+  h2 {
+    margin-top: 20px;
+  }
+
+  #videoContainer {
+    position: relative;
+    display: inline-block;
+    margin-top: 20px;
+  }
+
+  video {
+    width: 800px;   /* 🔥 BIGGER CAMERA */
+    height: auto;
+    border-radius: 15px;
+    border: 3px solid #00ff99;
+  }
+
+  #overlay {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: rgba(0, 255, 0, 0.8);
+    color: black;
+    padding: 12px 20px;
+    font-size: 24px;
+    font-weight: bold;
+    border-radius: 10px;
+  }
+</style>
+</head>
+<body>
+
+<h2>🔥 Live Sign Detection (Real-Time)</h2>
+
+<div id="videoContainer">
+  <video id="video" width="400" autoplay></video>
+  <div id="overlay">Detecting...</div>
+</div>
+
+<canvas id="canvas" width="224" height="224" style="display:none;"></canvas>
+
+<script>
+const video = document.getElementById("video");
+const overlay = document.getElementById("overlay");
+
+// Start camera
+navigator.mediaDevices.getUserMedia({ video: true })
+  .then(stream => {
+    video.srcObject = stream;
+  });
+
+// Capture + Predict every 800ms
+setInterval(async () => {
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+
+  ctx.drawImage(video, 0, 0, 224, 224);
+
+  canvas.toBlob(async function(blob) {
+    let formData = new FormData();
+    formData.append("file", blob, "frame.jpg");
+
+    try {
+      let res = await fetch("/predict", {
+        method: "POST",
+        body: formData
+      });
+
+      let data = await res.json();
+
+      overlay.innerText =
+        data.prediction + " (" + data.confidence + ")";
+    } catch (err) {
+      overlay.innerText = "Error...";
+    }
+
+  }, "image/jpeg");
+
+}, 1000); // ⏱ every 0.8 sec
+</script>
+
+</body>
+</html>
